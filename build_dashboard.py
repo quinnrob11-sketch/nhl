@@ -367,31 +367,74 @@ def build_dashboard(date_str, slate_games):
         odds_dict[f"{o['player']}|{o['market']}"] = o
 
     # Render HTML
-    html = render_html(date_str, slate_games, teams_env, players, odds_dict)
+    build_iso = datetime.now(timezone.utc).isoformat()
+    html = render_html(date_str, slate_games, teams_env, players, odds_dict, build_iso)
     out_fp = DOCS / "index.html"
     out_fp.write_text(html, encoding="utf-8")
     print(f"  wrote {out_fp} ({len(html)} bytes)")
 
-def render_html(date_str, games, teams_env, players, odds_dict):
+def render_html(date_str, games, teams_env, players, odds_dict, build_iso=""):
     games_json = json.dumps(games, separators=(",",":"))
     teams_json = json.dumps(teams_env, separators=(",",":"))
     players_json = json.dumps(players, separators=(",",":"))
     odds_json = json.dumps(odds_dict, separators=(",",":"))
+    if not build_iso:
+        build_iso = datetime.now(timezone.utc).isoformat()
+    n_dk = len([k for k in odds_dict if odds_dict[k].get('over_price') is not None])
+    n_games = len(games)
+    n_players = len(players)
+    # Game cards summary
+    game_cards_html = ""
+    for g in games:
+        away = g.get("away","?")
+        home = g.get("home","?")
+        commence = g.get("commence","")
+        time_str = ""
+        if commence:
+            try:
+                ts = datetime.fromisoformat(commence.replace("Z","+00:00"))
+                et = ts - timedelta(hours=4)
+                time_str = et.strftime("%-I:%M %p ET") if hasattr(et, 'strftime') else et.strftime("%I:%M %p ET")
+            except Exception:
+                time_str = ""
+        game_cards_html += f'<div class="gcard"><span class="gteam">{away}</span><span class="gat">@</span><span class="gteam">{home}</span><span class="gtime">{time_str}</span></div>'
     return f"""<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>NHL Props Model — {date_str}</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext y='26' font-size='28'%3E🏒%3C/text%3E%3C/svg%3E">
 <style>
 :root{{color-scheme:light}}
 *{{box-sizing:border-box}}
 body{{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#fafbfc;color:#1a1d24;font-size:13px}}
-.wrap{{max-width:1500px;margin:0 auto;padding:12px}}
-h1{{font-size:18px;margin:0 0 4px}}
-.sub{{color:#6b7280;font-size:11px;margin-bottom:10px}}
-.bars{{display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap}}
-.bar{{background:#d1fae5;border:1px solid #6ee7b7;color:#065f46;padding:4px 8px;border-radius:5px;font-size:10px}}
-.dkbar{{background:#1e3a8a;color:#fcd34d;font-weight:600}}
-.controls{{background:white;border:1px solid #e3e6eb;border-radius:6px;padding:8px;margin-bottom:10px;display:flex;gap:6px;flex-wrap:wrap}}
+.topnav{{position:sticky;top:0;z-index:100;background:#0f172a;color:#f1f5f9;border-bottom:1px solid #1e293b;box-shadow:0 1px 3px rgba(0,0,0,0.15)}}
+.topnav-inner{{max-width:1500px;margin:0 auto;padding:10px 14px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}}
+.brand{{font-size:15px;font-weight:700;display:flex;align-items:center;gap:6px;color:#f1f5f9}}
+.brand .logo{{font-size:18px}}
+.brand .ver{{background:#1e293b;color:#94a3b8;font-size:9px;padding:2px 5px;border-radius:3px;margin-left:4px;font-weight:500}}
+.nav-status{{display:flex;align-items:center;gap:8px;font-size:11px;color:#cbd5e1}}
+.nav-status .dot{{width:7px;height:7px;border-radius:50%;background:#10b981;box-shadow:0 0 0 2px rgba(16,185,129,0.2);animation:pulse 2s infinite}}
+@keyframes pulse{{0%,100%{{opacity:1}}50%{{opacity:0.5}}}}
+.nav-grow{{flex:1}}
+.nav-btn{{background:#1e40af;color:white;border:none;padding:6px 12px;border-radius:5px;cursor:pointer;font-size:11px;font-weight:600;text-decoration:none;display:inline-flex;align-items:center;gap:5px;transition:background 0.15s}}
+.nav-btn:hover{{background:#2563eb}}
+.nav-btn.ghost{{background:transparent;color:#cbd5e1;border:1px solid #334155}}
+.nav-btn.ghost:hover{{background:#1e293b;color:white}}
+.wrap{{max-width:1500px;margin:0 auto;padding:14px}}
+.metrics{{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-bottom:14px}}
+.metric{{background:white;border:1px solid #e3e6eb;border-radius:6px;padding:10px 12px}}
+.metric .lbl{{font-size:9px;text-transform:uppercase;color:#6b7280;font-weight:600;letter-spacing:0.4px;margin-bottom:3px}}
+.metric .val{{font-size:18px;font-weight:700;color:#1a1d24}}
+.metric .sub{{font-size:10px;color:#6b7280;margin-top:2px}}
+.metric.dk .val{{color:#1e40af}}
+.section-h{{font-size:11px;text-transform:uppercase;color:#6b7280;font-weight:700;letter-spacing:0.5px;margin:6px 0 8px}}
+.gcards{{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px}}
+.gcard{{background:white;border:1px solid #e3e6eb;border-radius:6px;padding:7px 12px;display:flex;align-items:center;gap:6px;font-size:12px}}
+.gteam{{font-weight:700;color:#1a1d24}}
+.gat{{color:#9ca3af;font-size:11px}}
+.gtime{{color:#6b7280;font-size:10px;margin-left:6px;padding-left:6px;border-left:1px solid #e5e7eb}}
+.controls{{background:white;border:1px solid #e3e6eb;border-radius:6px;padding:8px;margin-bottom:10px;display:flex;gap:6px;flex-wrap:wrap;position:sticky;top:48px;z-index:50}}
 .btn{{padding:4px 8px;border:1px solid #d1d5db;background:white;border-radius:4px;cursor:pointer;font-size:11px;color:#4a5263}}
+.btn:hover{{background:#f9fafb}}
 .btn.active{{background:#1a1d24;color:white;border-color:#1a1d24}}
 .search{{flex:1;min-width:150px;padding:5px 8px;border:1px solid #d1d5db;border-radius:4px;font-size:11px}}
 table{{width:100%;border-collapse:collapse;background:white;border:1px solid #e3e6eb;border-radius:5px;overflow:hidden;font-size:10px}}
@@ -413,17 +456,45 @@ tr:hover td{{background:#fafbfc}}
 .tag-STRONG-DISAGREE-OVER{{background:#f59e0b;color:white}}
 .tag-STRONG-DISAGREE-UNDER{{background:#dc2626;color:white}}
 .tag-NO-LINE{{background:#f3f4f6;color:#6b7280;font-style:italic}}
-@media(max-width:768px){{.controls{{font-size:9px}}table{{font-size:9px}}.btn{{padding:3px 6px;font-size:10px}}}}
+.foot{{margin-top:24px;padding:14px 0;border-top:1px solid #e3e6eb;text-align:center;color:#6b7280;font-size:10px;line-height:1.6}}
+.foot a{{color:#1e40af;text-decoration:none}}
+.foot a:hover{{text-decoration:underline}}
+.modal-bg{{display:none;position:fixed;inset:0;background:rgba(15,23,42,0.6);z-index:200;align-items:center;justify-content:center;padding:14px}}
+.modal-bg.show{{display:flex}}
+.modal{{background:white;border-radius:8px;padding:20px;max-width:480px;width:100%;box-shadow:0 10px 25px rgba(0,0,0,0.2)}}
+.modal h3{{margin:0 0 8px;font-size:15px}}
+.modal p{{font-size:12px;color:#4b5563;margin:0 0 14px;line-height:1.5}}
+.modal-btns{{display:flex;gap:8px;justify-content:flex-end}}
+@media(max-width:768px){{
+  .topnav-inner{{padding:8px 10px;gap:8px}}
+  .brand{{font-size:13px}}
+  .nav-status{{font-size:10px}}
+  .nav-btn{{padding:5px 9px;font-size:10px}}
+  .controls{{font-size:9px;top:90px}}
+  table{{font-size:9px}}
+  .btn{{padding:3px 6px;font-size:10px}}
+  .metric .val{{font-size:14px}}
+}}
 </style></head><body>
+<nav class="topnav">
+  <div class="topnav-inner">
+    <div class="brand"><span class="logo">🏒</span> NHL Props Model <span class="ver">v10</span></div>
+    <div class="nav-status"><span class="dot"></span><span id="freshness">Loading...</span></div>
+    <div class="nav-grow"></div>
+    <a class="nav-btn ghost" href="https://github.com/quinnrob11-sketch/nhl" target="_blank" rel="noopener">📂 Repo</a>
+    <button class="nav-btn" id="refreshBtn">🔄 Refresh Data</button>
+  </div>
+</nav>
 <div class="wrap">
-<h1>NHL Props Model</h1>
-<div class="sub">{date_str} · auto-built · refresh page for latest</div>
-<div class="bars">
-<div class="bar dkbar">⚡ {len([k for k in odds_dict if odds_dict[k].get('over_price') is not None])} DK props live</div>
-<div class="bar">📐 50/50 blend baseline</div>
-<div class="bar">🔧 v9.3 calibration</div>
-<div class="bar">🌐 GitHub Actions auto-build</div>
+<div class="metrics">
+  <div class="metric"><div class="lbl">Slate Date</div><div class="val">{date_str}</div><div class="sub">tonight's playoff games</div></div>
+  <div class="metric"><div class="lbl">Games</div><div class="val">{n_games}</div><div class="sub">scheduled</div></div>
+  <div class="metric"><div class="lbl">Players Modeled</div><div class="val">{n_players}</div><div class="sub">across all rosters</div></div>
+  <div class="metric dk"><div class="lbl">DK Props Live</div><div class="val">{n_dk}</div><div class="sub">SOG · Pts · Ast</div></div>
 </div>
+<div class="section-h">Tonight's Slate</div>
+<div class="gcards">{game_cards_html or '<div class="gcard" style="color:#9ca3af">No playoff games tonight</div>'}</div>
+<div class="section-h">Player Props</div>
 <div class="controls">
 <button class="btn active" data-f="ALL">All</button>
 <button class="btn" data-f="H">Hits</button>
@@ -531,7 +602,68 @@ document.getElementById("sortDis").onclick=e=>setS("dis",e.target);
 document.getElementById("sortROI").onclick=e=>setS("roi",e.target);
 document.getElementById("search").oninput=e=>{{q=e.target.value;render();}};
 render();
-</script></body></html>"""
+
+// ---- Build freshness indicator ----
+const BUILD_ISO = "{build_iso}";
+function fmtAge(){{
+  const built = new Date(BUILD_ISO);
+  const now = new Date();
+  const mins = Math.floor((now - built)/60000);
+  if (mins < 1) return "Just updated";
+  if (mins < 60) return `Updated ${{mins}}m ago`;
+  const hrs = Math.floor(mins/60);
+  if (hrs < 24) return `Updated ${{hrs}}h ago`;
+  const days = Math.floor(hrs/24);
+  return `Updated ${{days}}d ago`;
+}}
+function fmtNextRun(){{
+  // Schedules: 16:00, 20:00, 23:00 UTC
+  const now = new Date();
+  const cron = [16,20,23];
+  let next = null;
+  for (const h of cron){{
+    const t = new Date(Date.UTC(now.getUTCFullYear(),now.getUTCMonth(),now.getUTCDate(),h,0,0));
+    if (t > now) {{ next = t; break; }}
+  }}
+  if (!next) {{
+    next = new Date(Date.UTC(now.getUTCFullYear(),now.getUTCMonth(),now.getUTCDate()+1,16,0,0));
+  }}
+  const diff = next - now;
+  const h = Math.floor(diff/3600000);
+  const m = Math.floor((diff%3600000)/60000);
+  return h > 0 ? `next auto-build in ${{h}}h ${{m}}m` : `next auto-build in ${{m}}m`;
+}}
+function updateFresh(){{
+  document.getElementById("freshness").textContent = `${{fmtAge()}} · ${{fmtNextRun()}}`;
+}}
+updateFresh();
+setInterval(updateFresh, 30000);
+
+// ---- Refresh modal ----
+document.getElementById("refreshBtn").onclick = () => {{
+  document.getElementById("refreshModal").classList.add("show");
+}};
+function closeModal(){{ document.getElementById("refreshModal").classList.remove("show"); }}
+function openActions(){{
+  window.open("https://github.com/quinnrob11-sketch/nhl/actions/workflows/daily.yml", "_blank");
+  closeModal();
+}}
+</script>
+<div id="refreshModal" class="modal-bg" onclick="if(event.target===this)closeModal()">
+  <div class="modal">
+    <h3>🔄 Refresh data now</h3>
+    <p>The site auto-rebuilds at 12pm, 4pm, and 7pm ET daily. To force a refresh now, GitHub will open in a new tab — click the green <b>Run workflow</b> button there. Build takes ~30 seconds, then refresh this page.</p>
+    <div class="modal-btns">
+      <button class="btn" onclick="closeModal()">Cancel</button>
+      <button class="nav-btn" onclick="openActions()">Open GitHub Actions →</button>
+    </div>
+  </div>
+</div>
+<div class="foot">
+  Built {build_iso[:16].replace('T',' ')} UTC · Auto-rebuilds 12pm / 4pm / 7pm ET<br>
+  <a href="https://github.com/quinnrob11-sketch/nhl" target="_blank" rel="noopener">github.com/quinnrob11-sketch/nhl</a> · Data: NHL API + DraftKings via The Odds API · Model: v9.3 · UI: v10
+</div>
+</body></html>"""
 
 # ---------- main ----------
 if __name__ == "__main__":
