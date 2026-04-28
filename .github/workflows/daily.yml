@@ -1,0 +1,52 @@
+name: Daily NHL Props Build
+
+on:
+  schedule:
+    # Times in UTC. ET = UTC - 4 (DST) or UTC - 5
+    # 12pm ET = 16:00 UTC (DST) — pull season data + grade yesterday
+    # 4pm ET  = 20:00 UTC — first DK odds pull
+    # 7pm ET  = 23:00 UTC — final DK odds before puck drop
+    - cron: '0 16 * * *'
+    - cron: '0 20 * * *'
+    - cron: '0 23 * * *'
+  workflow_dispatch:        # allow manual triggering from GitHub UI
+
+permissions:
+  contents: write           # needed to commit dashboard updates back
+
+concurrency:
+  group: nhl-build
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Build dashboard (run all scrapers + render HTML)
+        env:
+          ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+        run: python build_dashboard.py
+
+      - name: Commit & push updates
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name  "github-actions[bot]"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "no changes"
+          else
+            git commit -m "auto: build $(date -u +'%Y-%m-%d %H:%M UTC')"
+            git push
+          fi
