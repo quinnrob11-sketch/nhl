@@ -711,6 +711,7 @@ function fmtNextRun(){{
   const m = Math.floor((diff%3600000)/60000);
   return h > 0 ? `next auto-build in ${{h}}h ${{m}}m` : `next auto-build in ${{m}}m`;
 }}
+function updateFresh(){{
   document.getElementById("freshness").textContent = `${{fmtAge()}} · ${{fmtNextRun()}}`;
 }}
 updateFresh();
