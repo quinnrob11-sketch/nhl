@@ -456,6 +456,11 @@ tr:hover td{{background:#fafbfc}}
 .tag-STRONG-DISAGREE-OVER{{background:#f59e0b;color:white}}
 .tag-STRONG-DISAGREE-UNDER{{background:#dc2626;color:white}}
 .tag-NO-LINE{{background:#f3f4f6;color:#6b7280;font-style:italic}}
+.line-input{{width:46px;border:1px solid #d1d5db;border-radius:3px;padding:2px 4px;text-align:right;font-family:ui-monospace,monospace;font-size:10px;background:white;color:#1a1d24}}
+.line-input.override{{background:#fef3c7;border-color:#f59e0b;color:#78350f;font-weight:700}}
+.line-input:focus{{outline:none;border-color:#1e40af;box-shadow:0 0 0 2px rgba(30,64,175,0.15)}}
+.reset-icon{{display:inline-block;width:11px;height:11px;border-radius:50%;background:#fbbf24;color:#78350f;text-align:center;font-size:8px;font-weight:700;line-height:11px;margin-left:3px;cursor:pointer;vertical-align:middle}}
+.reset-icon:hover{{background:#f59e0b}}
 .foot{{margin-top:24px;padding:14px 0;border-top:1px solid #e3e6eb;text-align:center;color:#6b7280;font-size:10px;line-height:1.6}}
 .foot a{{color:#1e40af;text-decoration:none}}
 .foot a:hover{{text-decoration:underline}}
@@ -503,6 +508,7 @@ tr:hover td{{background:#fafbfc}}
 <button class="btn" data-f="A">Ast</button>
 <button class="btn" id="dkOnly">DK Only</button>
 <button class="btn" id="disOnly">Disagree</button>
+<button class="btn" id="clearOverrides" title="Clear all manual line overrides">↺ Reset Lines (<span id="ovCount">0</span>)</button>
 <button class="btn active" id="sortModel">Model% ↓</button>
 <button class="btn" id="sortDis">|Δ| ↓</button>
 <button class="btn" id="sortROI">ROI ↓</button>
@@ -555,13 +561,18 @@ function project(p){{
 }}
 function defLine(r,k){{r=num(r);if(k=="H")return r<0.5?0.5:Math.floor(r)+0.5;if(k=="S")return r<1?1.5:Math.floor(r)+0.5;if(k=="P")return r>=1.2?1.5:0.5;return 0.5;}}
 function tagAgree(m,b){{if(m==null||b==null)return"NO-LINE";const d=m-b,a=Math.abs(d);if(a<0.03)return"MATCH";const dir=d>0?"OVER":"UNDER";if(a>=0.12)return"STRONG-DISAGREE-"+dir;if(a>=0.07)return"DISAGREE-"+dir;return"LEAN-"+dir;}}
+const OVERRIDES = JSON.parse(localStorage.getItem("nhlLineOverrides") || "{{}}");
+function saveOverrides(){{ localStorage.setItem("nhlLineOverrides", JSON.stringify(OVERRIDES)); document.getElementById("ovCount").textContent = Object.keys(OVERRIDES).length; }}
 function build(){{
   const rows=[];
   for(const p of PLAYERS){{
     const pr=project(p); if(!pr)continue;
     for(const m of [{{k:"H",lbl:"HITS",b:p.hpg,e:pr.H,ok:"hits"}},{{k:"S",lbl:"SOG",b:p.spg,e:pr.S,ok:"sog"}},{{k:"P",lbl:"PTS",b:p.ppg,e:pr.P,ok:"pts"}},{{k:"A",lbl:"AST",b:p.ppg*0.65,e:pr.A,ok:"ast"}}]){{
       const dk=ODDS[p.name+"|"+m.ok];
-      const line=dk?dk.line:defLine(m.b,m.k);
+      const ovKey=p.name+"|"+m.k;
+      const dkLine=dk?dk.line:defLine(m.b,m.k);
+      const isOver=OVERRIDES[ovKey]!==undefined;
+      const line=isOver?OVERRIDES[ovKey]:dkLine;
       const op=dk?dk.over_price:null, up=dk?dk.under_price:null;
       const mp=probOver(m.e,line);
       const io=ame2p(op), iu=ame2p(up), bf=vs(io,iu);
@@ -569,7 +580,7 @@ function build(){{
       const tag=tagAgree(mp,bf);
       let roi=null;
       if(op!=null&&mp!=null){{const ro=mp*ame2d(op)-1;const ru=up!=null?(1-mp)*ame2d(up)-1:-1;roi=Math.max(ro,ru);}}
-      rows.push({{p,k:m.k,lbl:m.lbl,b:m.b,e:m.e,line,op,up,mp,bf,dl,roi,tag,hasDK:!!dk,opp:pr.opp,isHome:pr.isHome}});
+      rows.push({{p,k:m.k,lbl:m.lbl,b:m.b,e:m.e,line,dkLine,isOver,ovKey,op,up,mp,bf,dl,roi,tag,hasDK:!!dk,opp:pr.opp,isHome:pr.isHome}});
     }}
   }}
   return rows;
@@ -590,7 +601,8 @@ function render(){{
     const dc=x.dl==null?"":x.dl>0.07?"strong-over":x.dl>0.03?"over":x.dl<-0.07?"strong-under":x.dl<-0.03?"under":"";
     const rc=(x.roi||0)>0.10?"strong-over":(x.roi||0)>0.03?"over":(x.roi||0)<-0.05?"under":"";
     const ods=x.hasDK?(x.op>0?"+"+x.op:x.op)+"/"+(x.up>0?"+"+x.up:x.up):"<i style=color:#9ca3af>none</i>";
-    return `<tr><td><b>${{x.p.name}}</b></td><td>${{x.p.team}}</td><td>${{x.p.role}}</td><td>${{x.lbl}}</td><td class=proj style=color:#9ca3af>${{x.b.toFixed(2)}}</td><td class=proj>${{x.e.toFixed(2)}}</td><td class=proj>${{x.line}}</td><td>${{ods}}</td><td class="proj ${{oc}}">${{(x.mp*100).toFixed(0)}}%</td><td class=proj>${{x.bf!=null?(x.bf*100).toFixed(0)+"%":"—"}}</td><td class="proj ${{dc}}">${{x.dl!=null?((x.dl>=0?"+":"")+(x.dl*100).toFixed(1)+"%"):"—"}}</td><td class="proj ${{rc}}">${{x.roi!=null?((x.roi*100).toFixed(1)+"%"):"—"}}</td><td><span class="tag tag-${{x.tag}}">${{x.tag.replace("STRONG-DISAGREE-","★")}}</span></td></tr>`;
+    const lineCell = `<input class="line-input ${{x.isOver?'override':''}}" type="number" step="0.5" min="0" data-key="${{x.ovKey}}" data-default="${{x.dkLine}}" value="${{x.line}}" title="${{x.isOver?('manual override (DK: '+x.dkLine+')'):'click to edit'}}">${{x.isOver?'<span class="reset-icon" data-reset="'+x.ovKey+'" title="reset to default">×</span>':''}}`;
+    return `<tr><td><b>${{x.p.name}}</b></td><td>${{x.p.team}}</td><td>${{x.p.role}}</td><td>${{x.lbl}}</td><td class=proj style=color:#9ca3af>${{x.b.toFixed(2)}}</td><td class=proj>${{x.e.toFixed(2)}}</td><td>${{lineCell}}</td><td>${{ods}}</td><td class="proj ${{oc}}">${{(x.mp*100).toFixed(0)}}%</td><td class=proj>${{x.bf!=null?(x.bf*100).toFixed(0)+"%":"—"}}</td><td class="proj ${{dc}}">${{x.dl!=null?((x.dl>=0?"+":"")+(x.dl*100).toFixed(1)+"%"):"—"}}</td><td class="proj ${{rc}}">${{x.roi!=null?((x.roi*100).toFixed(1)+"%"):"—"}}</td><td><span class="tag tag-${{x.tag}}">${{x.tag.replace("STRONG-DISAGREE-","★")}}</span></td></tr>`;
   }}).join("");
 }}
 document.querySelectorAll("[data-f]").forEach(b=>b.onclick=e=>{{document.querySelectorAll("[data-f]").forEach(x=>x.classList.remove("active"));b.classList.add("active");filt=b.dataset.f;render();}});
@@ -601,6 +613,31 @@ document.getElementById("sortModel").onclick=e=>setS("model",e.target);
 document.getElementById("sortDis").onclick=e=>setS("dis",e.target);
 document.getElementById("sortROI").onclick=e=>setS("roi",e.target);
 document.getElementById("search").oninput=e=>{{q=e.target.value;render();}};
+
+// ---- Manual line override handlers ----
+document.addEventListener("change", e => {{
+  if (!e.target.classList || !e.target.classList.contains("line-input")) return;
+  const k = e.target.dataset.key;
+  const def = parseFloat(e.target.dataset.default);
+  const v = parseFloat(e.target.value);
+  if (isNaN(v) || v <= 0 || v === def) {{ delete OVERRIDES[k]; }}
+  else {{ OVERRIDES[k] = v; }}
+  saveOverrides();
+  render();
+}});
+document.addEventListener("click", e => {{
+  const k = e.target.dataset && e.target.dataset.reset;
+  if (!k) return;
+  delete OVERRIDES[k];
+  saveOverrides();
+  render();
+}});
+document.getElementById("clearOverrides").onclick = () => {{
+  if (Object.keys(OVERRIDES).length === 0) return;
+  if (!confirm("Clear all " + Object.keys(OVERRIDES).length + " manual line overrides?")) return;
+  render();
+}};
+saveOverrides();
 render();
 
 // ---- Build freshness indicator ----
@@ -617,7 +654,6 @@ function fmtAge(){{
   return `Updated ${{days}}d ago`;
 }}
 function fmtNextRun(){{
-  // Schedules: 16:00, 20:00, 23:00 UTC
   const now = new Date();
   const cron = [16,20,23];
   let next = null;
