@@ -59,68 +59,85 @@ def safe(d, k, dflt=0):
     v = (d or {}).get(k); return v if v is not None else dflt
 
 # ---------- 1. Determine tonight's slate from NHL schedule ----------
-def _games_for(date_str, only_upcoming=False, now_utc=None):
-    """Fetch playoff games on a given date. If only_upcoming, drop already-started games."""
-    try:
-        data, _ = fetch(f"{NHL_WEB}schedule/{date_str}")
-    except Exception:
-        return []
+def _games_in_window(start_utc, end_utc, scan_dates):
+    """Fetch playoff games whose start time is within [start_utc, end_utc].
+
+    Pulls multiple calendar dates so we don't miss late games whose NHL-API
+    `date` field rolls into tomorrow due to local-timezone bucketing
+    (e.g. a 10pm ET puck-drop ANA@EDM game that NHL puts on the next day)."""
+    seen_ids = set()
     games = []
-    for week in data.get("gameWeek", []):
-        if week.get("date") == date_str:
+    for d in scan_dates:
+        try:
+            data, _ = fetch(f"{NHL_WEB}schedule/{d}")
+        except Exception:
+            continue
+        for week in data.get("gameWeek", []):
             for g in week.get("games", []):
                 if g.get("gameType") != 3:    # 3 = playoffs
                     continue
+                gid = g.get("id")
+                if gid in seen_ids:
+                    continue
                 commence = g.get("startTimeUTC", "")
-                if only_upcoming and commence and now_utc:
-                    try:
-                        ts = datetime.fromisoformat(commence.replace("Z", "+00:00"))
-                        # leave a 30-min buffer — keep games that start within 30min in the past
-                        if ts < now_utc - timedelta(minutes=30):
-                            continue
-                    except Exception:
-                        pass
+                if not commence:
+                    continue
+                try:
+                    ts = datetime.fromisoformat(commence.replace("Z", "+00:00"))
+                except Exception:
+                    continue
+                if ts < start_utc or ts > end_utc:
+                    continue
+                seen_ids.add(gid)
                 games.append({
-                    "id": g["id"],
+                    "id": gid,
                     "home": g["homeTeam"]["abbrev"],
                     "away": g["awayTeam"]["abbrev"],
                     "commence": commence,
                 })
+    games.sort(key=lambda x: x["commence"])
     return games
 
 def detect_slate():
-    """Pick the slate that DK currently has odds for: today's upcoming games,
-    or tomorrow's games if today's are all done."""
+    """Pick the slate that DK currently has odds for: all playoff games whose
+    start time is in (now - 30min, now + 28h]. Falls back to next-day if empty.
+
+    Scans 3 calendar dates (yesterday/today/tomorrow ET) because NHL's API
+    buckets games by local-timezone date, and a 10pm-MT/12am-ET game can land
+    on either side of the boundary depending on the home arena's tz."""
     now_utc = datetime.now(timezone.utc)
     et = now_utc - timedelta(hours=4)  # DST approximation
     today_str = et.strftime("%Y-%m-%d")
     tomorrow_str = (et + timedelta(days=1)).strftime("%Y-%m-%d")
     yesterday_str = (et - timedelta(days=1)).strftime("%Y-%m-%d")
+    scan = [yesterday_str, today_str, tomorrow_str]
 
-    # If we're in the early-AM hours (before 5am ET), the schedule's "today"
-    # already advanced — but yesterday's games may still be the relevant slate
-    # if they haven't kicked off yet (rare). We try forward first.
-    print(f"  ET now: {et.strftime('%Y-%m-%d %H:%M')} — checking slate")
+    print(f"  ET now: {et.strftime('%Y-%m-%d %H:%M')} — checking slate (scan {scan})")
 
-    # 1) Today's games that haven't kicked off yet
-    games = _games_for(today_str, only_upcoming=True, now_utc=now_utc)
+    # 1) Upcoming-or-just-started: in window (now-30min, now+28h]
+    start = now_utc - timedelta(minutes=30)
+    end = now_utc + timedelta(hours=28)
+    games = _games_in_window(start, end, scan)
     if games:
-        print(f"  using today {today_str}: {len(games)} upcoming game(s)")
-        return today_str, games
+        # Use the date of the first game (in ET) as the slate label
+        first_ts = datetime.fromisoformat(games[0]["commence"].replace("Z","+00:00"))
+        first_et = first_ts - timedelta(hours=4)
+        slate_date = first_et.strftime("%Y-%m-%d")
+        print(f"  found {len(games)} upcoming game(s); slate label {slate_date}")
+        for g in games:
+            print(f"    {g['away']}@{g['home']} {g['commence']}")
+        return slate_date, games
 
-    # 2) Tomorrow's games (DK posts these the night before)
-    games = _games_for(tomorrow_str, only_upcoming=False)
+    # 2) Fallback — look further ahead (next 48h) if nothing in primary window
+    games = _games_in_window(now_utc, now_utc + timedelta(hours=48), scan + [(et + timedelta(days=2)).strftime("%Y-%m-%d")])
     if games:
-        print(f"  today done — using tomorrow {tomorrow_str}: {len(games)} game(s)")
-        return tomorrow_str, games
+        first_ts = datetime.fromisoformat(games[0]["commence"].replace("Z","+00:00"))
+        first_et = first_ts - timedelta(hours=4)
+        slate_date = first_et.strftime("%Y-%m-%d")
+        print(f"  fallback to next 48h: {len(games)} game(s); slate label {slate_date}")
+        return slate_date, games
 
-    # 3) Fallback to today's full schedule (even if started/finished)
-    games = _games_for(today_str, only_upcoming=False)
-    if games:
-        print(f"  fallback: using today {today_str} full slate: {len(games)} game(s)")
-        return today_str, games
-
-    print(f"  no playoff games found for {today_str} or {tomorrow_str}")
+    print(f"  no playoff games found for {scan}")
     return today_str, []
 
 # ---------- 2. Pull NHL stats ----------
