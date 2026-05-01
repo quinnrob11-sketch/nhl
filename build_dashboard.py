@@ -253,20 +253,36 @@ def scrape_odds(date_str, games):
 
 # ---------- 5. Pull yesterday's box scores for grading ----------
 def scrape_boxscores_yesterday():
-    yest = (datetime.now(timezone.utc) - timedelta(hours=4) - timedelta(days=1)).strftime("%Y-%m-%d")
+    et_now = datetime.now(timezone.utc) - timedelta(hours=4)
+    yest = (et_now - timedelta(days=1)).strftime("%Y-%m-%d")
     fp = DATA / f"boxscores_{yest}.json"
     if fp.exists():
         print(f"[scrape_boxscores] {yest} already cached"); return
-    print(f"[scrape_boxscores] {yest}")
-    try:
-        sched, _ = fetch(f"{NHL_WEB}schedule/{yest}")
-    except: return
+    print(f"[scrape_boxscores] {yest} (scanning ±1 day for tz-bucketed games)")
+    # Scan yesterday AND today's NHL schedule, then keep games whose start time
+    # falls in yesterday's ET window. Late games (e.g. 10pm ET ANA) sometimes
+    # bucket into the next-day in NHL's local-tz date field.
+    yest_dt = et_now - timedelta(days=1)
+    yest_start_utc = (datetime(yest_dt.year, yest_dt.month, yest_dt.day, 0, 0, tzinfo=timezone.utc) + timedelta(hours=4))
+    yest_end_utc = yest_start_utc + timedelta(days=1)
+    today_str = et_now.strftime("%Y-%m-%d")
+    seen = set()
     games = []
-    for week in sched.get("gameWeek", []):
-        if week.get("date") == yest:
+    for d in (yest, today_str):
+        try:
+            sched, _ = fetch(f"{NHL_WEB}schedule/{d}")
+        except: continue
+        for week in sched.get("gameWeek", []):
             for g in week.get("games", []):
-                if g.get("gameState") in ("FINAL","OFF"):
-                    games.append(g)
+                if g.get("gameState") not in ("FINAL","OFF"): continue
+                if g["id"] in seen: continue
+                commence = g.get("startTimeUTC","")
+                if not commence: continue
+                try:
+                    ts = datetime.fromisoformat(commence.replace("Z","+00:00"))
+                except: continue
+                if ts < yest_start_utc or ts >= yest_end_utc: continue
+                seen.add(g["id"]); games.append(g)
     out = {"date": yest, "games": []}
     for g in games:
         try:
