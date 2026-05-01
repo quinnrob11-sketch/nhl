@@ -85,6 +85,7 @@ def scrape_prizepicks(league_id=NHL_LEAGUE_ID, out_path=None):
 
     props = []
     skipped_stats = set()
+    skipped_nonstandard = 0
     for p in j.get("data", []):
         attr = p.get("attributes", {}) or {}
         rel = p.get("relationships", {}) or {}
@@ -99,12 +100,26 @@ def scrape_prizepicks(league_id=NHL_LEAGUE_ID, out_path=None):
             continue
         if not player_name:
             continue
+
+        # Only keep STANDARD two-way lines. PrizePicks also posts:
+        #  - "goblin"   = easier line (lower line, smaller payout)
+        #  - "demon"    = harder line (higher line, bigger payout)
+        # plus various promo flags. Goblins/demons have skewed payouts so we
+        # don't want to show them on the dashboard as if they were normal lines.
+        odds_type = (attr.get("odds_type") or "standard").lower()
+        is_promo = bool(attr.get("is_promo"))
+        flash = attr.get("flash_sale_line_score") is not None
+        if odds_type != "standard" or is_promo or flash:
+            skipped_nonstandard += 1
+            continue
+
         props.append({
             "player": player_name,
             "market": market,
             "line": attr.get("line_score"),
             "id": p.get("id"),
             "stat_type_raw": stat,
+            "odds_type": odds_type,
             # PrizePicks deeplink — opens app.prizepicks.com with this projection focused
             "url": f"https://app.prizepicks.com/projections/{p.get('id')}" if p.get("id") else None,
         })
@@ -114,10 +129,13 @@ def scrape_prizepicks(league_id=NHL_LEAGUE_ID, out_path=None):
         "scrapedAt": datetime.now(timezone.utc).isoformat(),
         "props": props,
         "skipped_stat_types": sorted(skipped_stats),
+        "skipped_nonstandard": skipped_nonstandard,
         "raw_count": len(j.get("data", [])),
     }
     fp.write_text(json.dumps(out))
-    print(f"  wrote {len(props)} NHL props ({len(skipped_stats)} stat types skipped) → {fp}")
+    print(f"  wrote {len(props)} standard NHL props "
+          f"({skipped_nonstandard} goblin/demon/promo skipped, "
+          f"{len(skipped_stats)} stat types skipped) → {fp}")
     return out
 
 if __name__ == "__main__":
