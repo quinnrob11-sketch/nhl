@@ -441,18 +441,31 @@ def build_dashboard(date_str, slate_games):
     for o in odds.get("props",[]):
         odds_dict[f"{o['player']}|{o['market']}"] = o
 
+    # Load PrizePicks props for availability chips
+    pp_dict = {}
+    pp_fp = DATA / f"prizepicks_{date_str}.json"
+    if pp_fp.exists():
+        try:
+            pp_data = json.loads(pp_fp.read_text())
+            for x in pp_data.get("props", []):
+                pp_dict[f"{x['player']}|{x['market']}"] = x
+            print(f"  loaded {len(pp_dict)} PrizePicks props")
+        except Exception as e:
+            print(f"  PrizePicks load failed: {e}")
+
     # Render HTML
     build_iso = datetime.now(timezone.utc).isoformat()
-    html = render_html(date_str, slate_games, teams_env, players, odds_dict, build_iso)
+    html = render_html(date_str, slate_games, teams_env, players, odds_dict, build_iso, pp_dict)
     out_fp = DOCS / "index.html"
     out_fp.write_text(html, encoding="utf-8")
     print(f"  wrote {out_fp} ({len(html)} bytes)")
 
-def render_html(date_str, games, teams_env, players, odds_dict, build_iso=""):
+def render_html(date_str, games, teams_env, players, odds_dict, build_iso="", pp_dict=None):
     games_json = json.dumps(games, separators=(",",":"))
     teams_json = json.dumps(teams_env, separators=(",",":"))
     players_json = json.dumps(players, separators=(",",":"))
     odds_json = json.dumps(odds_dict, separators=(",",":"))
+    pp_json = json.dumps(pp_dict or {}, separators=(",",":"))
     if not build_iso:
         build_iso = datetime.now(timezone.utc).isoformat()
     n_dk = len([k for k in odds_dict if odds_dict[k].get('over_price') is not None])
@@ -536,6 +549,10 @@ tr:hover td{{background:#fafbfc}}
 .line-input:focus{{outline:none;border-color:#1e40af;box-shadow:0 0 0 2px rgba(30,64,175,0.15)}}
 .reset-icon{{display:inline-block;width:11px;height:11px;border-radius:50%;background:#fbbf24;color:#78350f;text-align:center;font-size:8px;font-weight:700;line-height:11px;margin-left:3px;cursor:pointer;vertical-align:middle}}
 .reset-icon:hover{{background:#f59e0b}}
+.pp-chip{{display:inline-block;padding:1px 5px;border-radius:3px;font-size:9px;font-weight:700;text-decoration:none}}
+.pp-match{{background:#7c3aed;color:white}}
+.pp-diff{{background:#fef3c7;color:#92400e;border:1px solid #f59e0b}}
+.pp-none{{color:#cbd5e1}}
 .bet-btn{{padding:2px 6px;border:1px solid #16a34a;background:#dcfce7;color:#14532d;border-radius:3px;font-size:9px;font-weight:700;cursor:pointer;font-family:inherit}}
 .bet-btn:hover{{background:#16a34a;color:white}}
 .bet-btn:disabled{{background:#f3f4f6;color:#9ca3af;border-color:#e5e7eb;cursor:not-allowed}}
@@ -615,7 +632,7 @@ tr:hover td{{background:#fafbfc}}
 </div>
 <table id="t"><thead><tr>
 <th>Player</th><th>Tm</th><th>Role</th><th>Mkt</th><th>Base</th><th>Proj</th>
-<th>Line</th><th>O/U</th><th>Model%</th><th>Book%</th><th>Δ</th><th>ROI</th><th>Tag</th><th>Bet</th>
+<th>Line</th><th>O/U</th><th>Model%</th><th>Book%</th><th>Δ</th><th>ROI</th><th>Tag</th><th>PP</th><th>Bet</th>
 </tr></thead><tbody id="b"></tbody></table>
 </div>
 <script>
@@ -623,6 +640,7 @@ const GAMES={games_json};
 const TEAMS={teams_json};
 const PLAYERS={players_json};
 const ODDS={odds_json};
+const PP={pp_json};
 const LG={{hits_pg:20.42,shots_pg:27.83,goals_pg:3.082}};
 const MUL={json.dumps(MUL, separators=(',',':'))};
 
@@ -702,7 +720,20 @@ function render(){{
     const lineCell = `<input class="line-input ${{x.isOver?'override':''}}" type="number" step="0.5" min="0" data-key="${{x.ovKey}}" data-default="${{x.dkLine}}" value="${{x.line}}" title="${{x.isOver?('manual override (DK: '+x.dkLine+')'):'click to edit'}}">${{x.isOver?'<span class="reset-icon" data-reset="'+x.ovKey+'" title="reset to default">×</span>':''}}`;
     const pickSide = x.mp>=0.55?"OVER":x.mp<=0.45?"UNDER":null;
     const betCell = (x.hasDK && pickSide) ? `<button class="bet-btn" data-bet='${{JSON.stringify({{p:x.p.name,t:x.p.team,k:x.k,lbl:x.lbl,line:x.line,side:pickSide,op:x.op,up:x.up,mp:x.mp,roi:x.roi}}).replace(/'/g,"&apos;")}}'>💸 ${{pickSide}}</button>` : '<span style="color:#cbd5e1">—</span>';
-    return `<tr><td><b>${{x.p.name}}</b></td><td>${{x.p.team}}</td><td>${{x.p.role}}</td><td>${{x.lbl}}</td><td class=proj style=color:#9ca3af>${{x.b.toFixed(2)}}</td><td class=proj>${{x.e.toFixed(2)}}</td><td>${{lineCell}}</td><td>${{ods}}</td><td class="proj ${{oc}}">${{(x.mp*100).toFixed(0)}}%</td><td class=proj>${{x.bf!=null?(x.bf*100).toFixed(0)+"%":"—"}}</td><td class="proj ${{dc}}">${{x.dl!=null?((x.dl>=0?"+":"")+(x.dl*100).toFixed(1)+"%"):"—"}}</td><td class="proj ${{rc}}">${{x.roi!=null?((x.roi*100).toFixed(1)+"%"):"—"}}</td><td><span class="tag tag-${{x.tag}}">${{x.tag.replace("STRONG-DISAGREE-","★")}}</span></td><td>${{betCell}}</td></tr>`;
+    const ppKey = x.p.name+"|"+(x.k==="H"?"hits":x.k==="S"?"sog":x.k==="P"?"pts":"ast");
+    const pp = PP[ppKey];
+    let ppCell;
+    if (pp) {{
+      const sameLine = Number(pp.line) === Number(x.line);
+      const cls = sameLine ? "pp-chip pp-match" : "pp-chip pp-diff";
+      const tip = sameLine ? `On PrizePicks @ ${{pp.line}}` : `PrizePicks line is ${{pp.line}} (DK ${{x.line}})`;
+      ppCell = pp.url
+        ? `<a class="${{cls}}" href="${{pp.url}}" target="_blank" rel="noopener" title="${{tip}}">PP ${{pp.line}}</a>`
+        : `<span class="${{cls}}" title="${{tip}}">PP ${{pp.line}}</span>`;
+    }} else {{
+      ppCell = '<span class="pp-none">—</span>';
+    }}
+    return `<tr><td><b>${{x.p.name}}</b></td><td>${{x.p.team}}</td><td>${{x.p.role}}</td><td>${{x.lbl}}</td><td class=proj style=color:#9ca3af>${{x.b.toFixed(2)}}</td><td class=proj>${{x.e.toFixed(2)}}</td><td>${{lineCell}}</td><td>${{ods}}</td><td class="proj ${{oc}}">${{(x.mp*100).toFixed(0)}}%</td><td class=proj>${{x.bf!=null?(x.bf*100).toFixed(0)+"%":"—"}}</td><td class="proj ${{dc}}">${{x.dl!=null?((x.dl>=0?"+":"")+(x.dl*100).toFixed(1)+"%"):"—"}}</td><td class="proj ${{rc}}">${{x.roi!=null?((x.roi*100).toFixed(1)+"%"):"—"}}</td><td><span class="tag tag-${{x.tag}}">${{x.tag.replace("STRONG-DISAGREE-","★")}}</span></td><td>${{ppCell}}</td><td>${{betCell}}</td></tr>`;
   }}).join("");
 }}
 document.querySelectorAll("[data-f]").forEach(b=>b.onclick=e=>{{document.querySelectorAll("[data-f]").forEach(x=>x.classList.remove("active"));b.classList.add("active");filt=b.dataset.f;render();}});
@@ -919,6 +950,11 @@ if __name__ == "__main__":
         scrape_historical()
         scrape_boxscores_yesterday()
         scrape_odds(date_str, slate)
+        try:
+            from scrape_prizepicks import scrape_prizepicks
+            scrape_prizepicks()
+        except Exception as e:
+            print(f"[scrape_prizepicks] skipped: {e}")
         build_dashboard(date_str, slate)
         print("done.")
     except Exception as e:
