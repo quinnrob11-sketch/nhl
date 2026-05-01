@@ -536,6 +536,28 @@ tr:hover td{{background:#fafbfc}}
 .line-input:focus{{outline:none;border-color:#1e40af;box-shadow:0 0 0 2px rgba(30,64,175,0.15)}}
 .reset-icon{{display:inline-block;width:11px;height:11px;border-radius:50%;background:#fbbf24;color:#78350f;text-align:center;font-size:8px;font-weight:700;line-height:11px;margin-left:3px;cursor:pointer;vertical-align:middle}}
 .reset-icon:hover{{background:#f59e0b}}
+.bet-btn{{padding:2px 6px;border:1px solid #16a34a;background:#dcfce7;color:#14532d;border-radius:3px;font-size:9px;font-weight:700;cursor:pointer;font-family:inherit}}
+.bet-btn:hover{{background:#16a34a;color:white}}
+.bet-btn:disabled{{background:#f3f4f6;color:#9ca3af;border-color:#e5e7eb;cursor:not-allowed}}
+.proxy-pill{{font-size:10px;padding:3px 8px;border-radius:10px;font-weight:600;margin-left:8px}}
+.proxy-on{{background:#15803d;color:white}}
+.proxy-off{{background:#7f1d1d;color:#fecaca}}
+.bet-modal-content{{max-width:520px}}
+.bet-row{{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #f0f2f5;font-size:12px}}
+.bet-row b{{color:#1a1d24}}
+.bet-stake{{display:flex;align-items:center;gap:6px;margin:14px 0;font-size:13px}}
+.bet-stake input{{width:80px;padding:6px 8px;border:1px solid #d1d5db;border-radius:5px;font-size:14px;text-align:right;font-family:ui-monospace,monospace}}
+.bet-platforms{{display:flex;gap:8px;margin-top:14px}}
+.bet-platform-btn{{flex:1;padding:9px 12px;border:none;border-radius:5px;font-weight:700;font-size:12px;cursor:pointer}}
+.bet-kalshi{{background:#1e40af;color:white}}
+.bet-kalshi:hover{{background:#2563eb}}
+.bet-kalshi:disabled{{background:#94a3b8;cursor:not-allowed}}
+.bet-novig{{background:#ea580c;color:white}}
+.bet-novig:hover{{background:#f97316}}
+.bet-novig:disabled{{background:#94a3b8;cursor:not-allowed}}
+.bet-result{{margin-top:14px;padding:8px 10px;border-radius:5px;font-size:11px;font-family:ui-monospace,monospace;word-break:break-all;display:none}}
+.bet-result.ok{{background:#dcfce7;color:#14532d;border:1px solid #16a34a}}
+.bet-result.err{{background:#fee2e2;color:#991b1b;border:1px solid #dc2626}}
 .foot{{margin-top:24px;padding:14px 0;border-top:1px solid #e3e6eb;text-align:center;color:#6b7280;font-size:10px;line-height:1.6}}
 .foot a{{color:#1e40af;text-decoration:none}}
 .foot a:hover{{text-decoration:underline}}
@@ -560,6 +582,7 @@ tr:hover td{{background:#fafbfc}}
   <div class="topnav-inner">
     <div class="brand"><span class="logo">🏒</span> NHL Props Model <span class="ver">v10</span></div>
     <div class="nav-status"><span class="dot"></span><span id="freshness">Loading...</span></div>
+    <span id="proxyPill" class="proxy-pill proxy-off" title="Local bet-proxy connection status">⚠️ proxy offline</span>
     <div class="nav-grow"></div>
     <a class="nav-btn ghost" href="https://github.com/quinnrob11-sketch/nhl" target="_blank" rel="noopener">📂 Repo</a>
     <button class="nav-btn" id="refreshBtn">🔄 Refresh Data</button>
@@ -592,7 +615,7 @@ tr:hover td{{background:#fafbfc}}
 </div>
 <table id="t"><thead><tr>
 <th>Player</th><th>Tm</th><th>Role</th><th>Mkt</th><th>Base</th><th>Proj</th>
-<th>Line</th><th>O/U</th><th>Model%</th><th>Book%</th><th>Δ</th><th>ROI</th><th>Tag</th>
+<th>Line</th><th>O/U</th><th>Model%</th><th>Book%</th><th>Δ</th><th>ROI</th><th>Tag</th><th>Bet</th>
 </tr></thead><tbody id="b"></tbody></table>
 </div>
 <script>
@@ -677,7 +700,9 @@ function render(){{
     const rc=(x.roi||0)>0.10?"strong-over":(x.roi||0)>0.03?"over":(x.roi||0)<-0.05?"under":"";
     const ods=x.hasDK?(x.op>0?"+"+x.op:x.op)+"/"+(x.up>0?"+"+x.up:x.up):"<i style=color:#9ca3af>none</i>";
     const lineCell = `<input class="line-input ${{x.isOver?'override':''}}" type="number" step="0.5" min="0" data-key="${{x.ovKey}}" data-default="${{x.dkLine}}" value="${{x.line}}" title="${{x.isOver?('manual override (DK: '+x.dkLine+')'):'click to edit'}}">${{x.isOver?'<span class="reset-icon" data-reset="'+x.ovKey+'" title="reset to default">×</span>':''}}`;
-    return `<tr><td><b>${{x.p.name}}</b></td><td>${{x.p.team}}</td><td>${{x.p.role}}</td><td>${{x.lbl}}</td><td class=proj style=color:#9ca3af>${{x.b.toFixed(2)}}</td><td class=proj>${{x.e.toFixed(2)}}</td><td>${{lineCell}}</td><td>${{ods}}</td><td class="proj ${{oc}}">${{(x.mp*100).toFixed(0)}}%</td><td class=proj>${{x.bf!=null?(x.bf*100).toFixed(0)+"%":"—"}}</td><td class="proj ${{dc}}">${{x.dl!=null?((x.dl>=0?"+":"")+(x.dl*100).toFixed(1)+"%"):"—"}}</td><td class="proj ${{rc}}">${{x.roi!=null?((x.roi*100).toFixed(1)+"%"):"—"}}</td><td><span class="tag tag-${{x.tag}}">${{x.tag.replace("STRONG-DISAGREE-","★")}}</span></td></tr>`;
+    const pickSide = x.mp>=0.55?"OVER":x.mp<=0.45?"UNDER":null;
+    const betCell = (x.hasDK && pickSide) ? `<button class="bet-btn" data-bet='${{JSON.stringify({{p:x.p.name,t:x.p.team,k:x.k,lbl:x.lbl,line:x.line,side:pickSide,op:x.op,up:x.up,mp:x.mp,roi:x.roi}}).replace(/'/g,"&apos;")}}'>💸 ${{pickSide}}</button>` : '<span style="color:#cbd5e1">—</span>';
+    return `<tr><td><b>${{x.p.name}}</b></td><td>${{x.p.team}}</td><td>${{x.p.role}}</td><td>${{x.lbl}}</td><td class=proj style=color:#9ca3af>${{x.b.toFixed(2)}}</td><td class=proj>${{x.e.toFixed(2)}}</td><td>${{lineCell}}</td><td>${{ods}}</td><td class="proj ${{oc}}">${{(x.mp*100).toFixed(0)}}%</td><td class=proj>${{x.bf!=null?(x.bf*100).toFixed(0)+"%":"—"}}</td><td class="proj ${{dc}}">${{x.dl!=null?((x.dl>=0?"+":"")+(x.dl*100).toFixed(1)+"%"):"—"}}</td><td class="proj ${{rc}}">${{x.roi!=null?((x.roi*100).toFixed(1)+"%"):"—"}}</td><td><span class="tag tag-${{x.tag}}">${{x.tag.replace("STRONG-DISAGREE-","★")}}</span></td><td>${{betCell}}</td></tr>`;
   }}).join("");
 }}
 document.querySelectorAll("[data-f]").forEach(b=>b.onclick=e=>{{document.querySelectorAll("[data-f]").forEach(x=>x.classList.remove("active"));b.classList.add("active");filt=b.dataset.f;render();}});
@@ -759,6 +784,113 @@ function openActions(){{
   window.open("https://github.com/quinnrob11-sketch/nhl/actions/workflows/daily.yml", "_blank");
   closeModal();
 }}
+
+// ---- Bet proxy ----
+const PROXY_URL = (localStorage.getItem("nhlProxyUrl") || "http://localhost:5555").replace(/\/$/, "");
+let PROXY = {{connected:false, kalshi:false, novig:false, max_stake:50, dry_run:false}};
+async function pingProxy(){{
+  try {{
+    const ctrl = new AbortController(); setTimeout(()=>ctrl.abort(), 1500);
+    const r = await fetch(PROXY_URL+"/health", {{signal: ctrl.signal}});
+    if (!r.ok) throw 0;
+    const j = await r.json();
+    PROXY = {{connected:true, kalshi:!!j.kalshi_configured, novig:!!j.novig_configured, max_stake:j.max_stake_usd||50, dry_run:!!j.dry_run}};
+  }} catch(e) {{ PROXY = {{connected:false,kalshi:false,novig:false,max_stake:50,dry_run:false}}; }}
+  const pill = document.getElementById("proxyPill");
+  if (PROXY.connected) {{
+    pill.className = "proxy-pill proxy-on";
+    const tags = [];
+    if (PROXY.kalshi) tags.push("Kalshi"); if (PROXY.novig) tags.push("Novig");
+    pill.textContent = (PROXY.dry_run?"🧪 DRY ":"✅ ") + "proxy" + (tags.length? " ("+tags.join("/")+")":"");
+  }} else {{
+    pill.className = "proxy-pill proxy-off";
+    pill.textContent = "⚠️ proxy offline";
+  }}
+}}
+pingProxy(); setInterval(pingProxy, 8000);
+
+// ---- Bet modal ----
+const betModalHtml = `
+<div id="betModal" class="modal-bg" onclick="if(event.target===this)closeBet()">
+  <div class="modal bet-modal-content">
+    <h3 id="betTitle">Confirm bet</h3>
+    <div id="betDetails"></div>
+    <div class="bet-stake">
+      <label>Stake $</label>
+      <input id="betStake" type="number" min="1" step="1" value="5">
+      <span style="color:#6b7280;font-size:11px" id="betCap"></span>
+    </div>
+    <div class="bet-platforms">
+      <button class="bet-platform-btn bet-kalshi" id="betKalshi">Place on Kalshi</button>
+      <button class="bet-platform-btn bet-novig" id="betNovig">Place on Novig</button>
+      <button class="btn" onclick="closeBet()">Cancel</button>
+    </div>
+    <div id="betResult" class="bet-result"></div>
+  </div>
+</div>`;
+document.body.insertAdjacentHTML("beforeend", betModalHtml);
+let CURRENT_BET = null;
+function closeBet(){{ document.getElementById("betModal").classList.remove("show"); document.getElementById("betResult").style.display="none"; }}
+document.addEventListener("click", e => {{
+  const b = e.target.closest && e.target.closest(".bet-btn");
+  if (!b) return;
+  let info; try {{ info = JSON.parse(b.dataset.bet.replace(/&apos;/g,"'")); }} catch(_) {{ return; }}
+  CURRENT_BET = info;
+  const price = info.side==="OVER" ? info.op : info.up;
+  document.getElementById("betTitle").textContent = `${{info.p}} — ${{info.lbl}} ${{info.side}} ${{info.line}}`;
+  document.getElementById("betDetails").innerHTML = `
+    <div class="bet-row"><span>Team</span><b>${{info.t}}</b></div>
+    <div class="bet-row"><span>Market</span><b>${{info.lbl}} ${{info.side}} ${{info.line}}</b></div>
+    <div class="bet-row"><span>DK price</span><b>${{price>0?"+"+price:price}}</b></div>
+    <div class="bet-row"><span>Model %</span><b>${{(info.mp*100).toFixed(0)}}%</b></div>
+    <div class="bet-row"><span>Expected ROI</span><b style="color:${{(info.roi||0)>0?"#059669":"#dc2626"}}">${{info.roi!=null?((info.roi*100).toFixed(1)+"%"):"—"}}</b></div>
+    <div class="bet-row"><span>Proxy</span><b>${{PROXY.connected?(PROXY.dry_run?"🧪 DRY-RUN":"✅ live"):"⚠️ offline"}}</b></div>`;
+  document.getElementById("betCap").textContent = `(max $${{PROXY.max_stake}})`;
+  document.getElementById("betKalshi").disabled = !(PROXY.connected && PROXY.kalshi);
+  document.getElementById("betNovig").disabled = !(PROXY.connected && PROXY.novig);
+  document.getElementById("betResult").style.display="none";
+  document.getElementById("betModal").classList.add("show");
+}});
+async function place(platform){{
+  if (!CURRENT_BET) return;
+  const stake = Math.max(1, Number(document.getElementById("betStake").value)||0);
+  const price = CURRENT_BET.side==="OVER" ? CURRENT_BET.op : CURRENT_BET.up;
+  const res = document.getElementById("betResult");
+  res.style.display = "block"; res.className = "bet-result"; res.textContent = "Placing...";
+  try {{
+    let body;
+    if (platform === "kalshi") {{
+      // dashboard sends symbolic ask; proxy resolves to ticker via lookup endpoint
+      const lookup = await fetch(`${{PROXY_URL}}/kalshi/lookup?player=${{encodeURIComponent(CURRENT_BET.p)}}&market=${{CURRENT_BET.k.toLowerCase()==="s"?"sog":CURRENT_BET.k.toLowerCase()==="p"?"pts":CURRENT_BET.k.toLowerCase()==="a"?"ast":"hits"}}&line=${{CURRENT_BET.line}}&side=${{CURRENT_BET.side.toLowerCase()}}`);
+      const lj = await lookup.json();
+      const m = (lj.matches||[])[0];
+      if (!m) {{ throw new Error("No Kalshi market matched. Try Novig or place manually."); }}
+      const wantSide = CURRENT_BET.side==="OVER"?"yes":"no";
+      const priceCents = wantSide==="yes" ? (m.yes_ask||50) : (m.no_ask||50);
+      const count = Math.max(1, Math.floor(stake*100/priceCents));
+      body = {{ticker:m.ticker, side:wantSide, count, price_cents:priceCents}};
+      const r = await fetch(`${{PROXY_URL}}/kalshi/place_order`, {{method:"POST", headers:{{"Content-Type":"application/json"}}, body:JSON.stringify(body)}});
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error||"Kalshi rejected");
+      res.className = "bet-result ok"; res.textContent = "✅ Kalshi: " + JSON.stringify(j).slice(0,300);
+    }} else {{
+      body = {{
+        player: CURRENT_BET.p, team: CURRENT_BET.t,
+        market: CURRENT_BET.lbl.toLowerCase(), line: CURRENT_BET.line,
+        side: CURRENT_BET.side.toLowerCase(),
+        american_odds: price, stake_usd: stake
+      }};
+      const r = await fetch(`${{PROXY_URL}}/novig/place_order`, {{method:"POST", headers:{{"Content-Type":"application/json"}}, body:JSON.stringify(body)}});
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error||"Novig rejected");
+      res.className = "bet-result ok"; res.textContent = "✅ Novig: " + JSON.stringify(j).slice(0,300);
+    }}
+  }} catch(e) {{
+    res.className = "bet-result err"; res.textContent = "❌ " + e.message;
+  }}
+}}
+document.getElementById("betKalshi").onclick = () => place("kalshi");
+document.getElementById("betNovig").onclick = () => place("novig");
 </script>
 <div id="refreshModal" class="modal-bg" onclick="if(event.target===this)closeModal()">
   <div class="modal">
