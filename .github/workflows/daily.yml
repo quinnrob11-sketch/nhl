@@ -46,7 +46,19 @@ jobs:
           git add -A
           if git diff --cached --quiet; then
             echo "no changes"
-          else
-            git commit -m "auto: build $(date -u +'%Y-%m-%d %H:%M UTC')"
-            git push
+            exit 0
           fi
+          git commit -m "auto: build $(date -u +'%Y-%m-%d %H:%M UTC')"
+          # Retry up to 5 times with rebase to handle concurrent pushes
+          # (e.g. another workflow run, or a manual push from local).
+          for attempt in 1 2 3 4 5; do
+            if git push; then
+              echo "push ok on attempt $attempt"; exit 0
+            fi
+            echo "push rejected on attempt $attempt — fetch + rebase + retry"
+            git fetch origin main
+            git rebase origin/main || { git rebase --abort; exit 1; }
+            sleep $((attempt * 2))
+          done
+          echo "push failed after 5 attempts"
+          exit 1
